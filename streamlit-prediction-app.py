@@ -16,11 +16,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# Fungsi untuk menghitung MAE dan MAPE
+# Fungsi untuk menghitung semua metrik evaluasi
 def calculate_metrics(y_true, y_pred):
     mae = np.mean(np.abs(y_true - y_pred))
     mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-    return mae, mape
+    mse = np.mean((y_true - y_pred) ** 2)
+    rmse = np.sqrt(mse)
+    
+    # R-squared
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    r2 = 1 - (ss_res / ss_tot)
+    
+    return mae, mape, rmse, r2
 
 # Fungsi preprocessing data
 def preprocess_data(df):
@@ -74,9 +82,9 @@ def train_model(df, model_type='random_forest'):
     y_pred = model.predict(X_test_scaled)
     
     # Hitung metrik
-    mae, mape = calculate_metrics(y_test, y_pred)
+    mae, mape, rmse, r2 = calculate_metrics(y_test, y_pred)
     
-    return model, X_test, y_test, y_pred, mae, mape, le_gender, le_married, features, scaler
+    return model, X_test, y_test, y_pred, mae, mape, rmse, r2, le_gender, le_married, features, scaler
 
 # Header
 st.title("🎓 Aplikasi Prediksi Kelulusan Mahasiswa")
@@ -151,7 +159,7 @@ if menu == "Upload & Training":
                     status_text.text(f"Training {model_name}... ({idx+1}/{len(models_to_train)})")
                     
                     try:
-                        model, X_test, y_test, y_pred, mae, mape, le_gender, le_married, features, scaler = train_model(df, model_type)
+                        model, X_test, y_test, y_pred, mae, mape, rmse, r2, le_gender, le_married, features, scaler = train_model(df, model_type)
                         
                         # Simpan ke session state
                         st.session_state.models[model_type] = {
@@ -168,7 +176,9 @@ if menu == "Upload & Training":
                             'y_test': y_test,
                             'y_pred': y_pred,
                             'mae': mae,
-                            'mape': mape
+                            'mape': mape,
+                            'rmse': rmse,
+                            'r2': r2
                         }
                         
                         progress_bar.progress((idx + 1) / len(models_to_train))
@@ -188,7 +198,9 @@ if menu == "Upload & Training":
                     results_data.append({
                         'Model': result['name'],
                         'MAE': f"{result['mae']:.4f}",
-                        'MAPE': f"{result['mape']:.2f}%"
+                        'MAPE': f"{result['mape']:.2f}%",
+                        'RMSE': f"{result['rmse']:.4f}",
+                        'R²': f"{result['r2']:.4f}"
                     })
                 
                 results_df = pd.DataFrame(results_data)
@@ -207,6 +219,16 @@ if menu == "Upload & Training":
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
+                    rmse_data = [result['rmse'] for result in st.session_state.results.values()]
+                    
+                    fig = px.bar(x=model_names, y=rmse_data,
+                                title='Perbandingan RMSE',
+                                labels={'x': 'Model', 'y': 'RMSE'})
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                col3, col4 = st.columns(2)
+                
+                with col3:
                     mape_data = [result['mape'] for result in st.session_state.results.values()]
                     
                     fig = px.bar(x=model_names, y=mape_data,
@@ -214,14 +236,26 @@ if menu == "Upload & Training":
                                 labels={'x': 'Model', 'y': 'MAPE (%)'})
                     st.plotly_chart(fig, use_container_width=True)
                 
+                with col4:
+                    r2_data = [result['r2'] for result in st.session_state.results.values()]
+                    
+                    fig = px.bar(x=model_names, y=r2_data,
+                                title='Perbandingan R² Score',
+                                labels={'x': 'Model', 'y': 'R²'})
+                    st.plotly_chart(fig, use_container_width=True)
+                
                 # Detail untuk setiap model
                 for model_type, result in st.session_state.results.items():
                     with st.expander(f"📊 Detail {result['name']}"):
-                        col1, col2 = st.columns(2)
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             st.metric("MAE", f"{result['mae']:.4f}")
                         with col2:
                             st.metric("MAPE", f"{result['mape']:.2f}%")
+                        with col3:
+                            st.metric("RMSE", f"{result['rmse']:.4f}")
+                        with col4:
+                            st.metric("R² Score", f"{result['r2']:.4f}")
                         
                         # Scatter plot
                         fig = px.scatter(
@@ -449,12 +483,18 @@ elif menu == "Perbandingan Model":
             results_data.append({
                 'Model': result['name'],
                 'MAE': result['mae'],
-                'MAPE (%)': result['mape']
+                'MAPE (%)': result['mape'],
+                'RMSE': result['rmse'],
+                'R²': result['r2']
             })
         
         results_df = pd.DataFrame(results_data)
-        st.dataframe(results_df.style.highlight_min(subset=['MAE', 'MAPE (%)'], color='lightgreen'), 
-                    use_container_width=True)
+        
+        # Highlight best scores
+        styled_df = results_df.style.highlight_min(subset=['MAE', 'MAPE (%)', 'RMSE'], color='lightgreen')
+        styled_df = styled_df.highlight_max(subset=['R²'], color='lightgreen')
+        
+        st.dataframe(styled_df, use_container_width=True)
         
         # Visualisasi perbandingan
         col1, col2 = st.columns(2)
@@ -467,10 +507,26 @@ elif menu == "Perbandingan Model":
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
+            fig = px.bar(results_df, x='Model', y='RMSE',
+                        title='Perbandingan RMSE (Lower is Better)',
+                        color='RMSE',
+                        color_continuous_scale='RdYlGn_r')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        col3, col4 = st.columns(2)
+        
+        with col3:
             fig = px.bar(results_df, x='Model', y='MAPE (%)',
                         title='Perbandingan MAPE (Lower is Better)',
                         color='MAPE (%)',
                         color_continuous_scale='RdYlGn_r')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col4:
+            fig = px.bar(results_df, x='Model', y='R²',
+                        title='Perbandingan R² Score (Higher is Better)',
+                        color='R²',
+                        color_continuous_scale='RdYlGn')
             st.plotly_chart(fig, use_container_width=True)
         
         # Scatter plot semua model
@@ -510,8 +566,16 @@ elif menu == "Perbandingan Model":
         st.plotly_chart(fig, use_container_width=True)
         
         # Rekomendasi model terbaik
-        best_model = results_df.loc[results_df['MAE'].idxmin()]
-        st.success(f"🏆 **Model Terbaik:** {best_model['Model']} dengan MAE = {best_model['MAE']:.4f} dan MAPE = {best_model['MAPE (%)']:.2f}%")
+        best_model_mae = results_df.loc[results_df['MAE'].idxmin()]
+        best_model_r2 = results_df.loc[results_df['R²'].idxmax()]
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.success(f"🏆 **Model dengan MAE Terbaik:** {best_model_mae['Model']}")
+            st.caption(f"MAE = {best_model_mae['MAE']:.4f}, RMSE = {best_model_mae['RMSE']:.4f}")
+        with col2:
+            st.success(f"🏆 **Model dengan R² Terbaik:** {best_model_r2['Model']}")
+            st.caption(f"R² = {best_model_r2['R²']:.4f}, MAPE = {best_model_r2['MAPE (%)']:.2f}%")
 
 # Footer
 st.sidebar.markdown("---")
