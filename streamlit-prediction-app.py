@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
@@ -18,15 +19,11 @@ st.set_page_config(
 
 # Fungsi untuk menghitung semua metrik evaluasi
 def calculate_metrics(y_true, y_pred):
-    mae = np.mean(np.abs(y_true - y_pred))
+    mae = mean_absolute_error(y_true, y_pred)
     mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-    mse = np.mean((y_true - y_pred) ** 2)
+    mse = mean_squared_error(y_true, y_pred)
     rmse = np.sqrt(mse)
-    
-    # R-squared
-    ss_res = np.sum((y_true - y_pred) ** 2)
-    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-    r2 = 1 - (ss_res / ss_tot)
+    r2 = r2_score(y_true, y_pred)
     
     return mae, mape, rmse, r2
 
@@ -42,41 +39,21 @@ def preprocess_data(df):
     df_processed['status_menikah_encoded'] = le_married.fit_transform(df_processed['status_menikah'])
     
     # Handle missing values
-    df_processed = df_processed.fillna(df_processed.mean(numeric_only=True))
-    
-    # Remove outliers menggunakan IQR method
     numeric_cols = ['umur', 'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning', 'ipk']
     for col in numeric_cols:
-        Q1 = df_processed[col].quantile(0.25)
-        Q3 = df_processed[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        df_processed = df_processed[(df_processed[col] >= lower_bound) & (df_processed[col] <= upper_bound)]
+        if col in df_processed.columns:
+            df_processed[col] = df_processed[col].fillna(df_processed[col].median())
     
     return df_processed, le_gender, le_married
 
-# Fungsi untuk training model
-def train_model(df, model_type='random_forest'):
-    # Preprocessing
-    df_processed, le_gender, le_married = preprocess_data(df)
-    
-    # Features dan Target
-    features = ['jenis_kelamin_encoded', 'umur', 'status_menikah_encoded', 
-                'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning']
-    
-    X = df_processed[features]
-    y = df_processed['ipk']
-    
-    # Split data dengan stratifikasi untuk distribusi yang lebih baik
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True)
-    
-    # Scaling untuk semua model (penting untuk konsistensi)
+# Fungsi untuk training model dengan dataset yang sudah di-split
+def train_model_with_split(X_train, X_test, y_train, y_test, model_type='random_forest'):
+    # Scaling untuk semua model
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Pilih model dengan hyperparameter yang lebih optimal
+    # Pilih model dengan hyperparameter yang optimal
     if model_type == 'random_forest':
         model = RandomForestRegressor(
             n_estimators=200,
@@ -114,7 +91,7 @@ def train_model(df, model_type='random_forest'):
     # Hitung metrik
     mae, mape, rmse, r2 = calculate_metrics(y_test, y_pred)
     
-    return model, X_test, y_test, y_pred, mae, mape, rmse, r2, le_gender, le_married, features, scaler
+    return model, y_pred, mae, mape, rmse, r2, scaler
 
 # Header
 st.title("🎓 Aplikasi Prediksi Kelulusan Mahasiswa")
@@ -129,54 +106,161 @@ if 'models' not in st.session_state:
     st.session_state.models = {}
     st.session_state.results = {}
     st.session_state.trained = False
+    st.session_state.X_train = None
+    st.session_state.X_test = None
+    st.session_state.y_train = None
+    st.session_state.y_test = None
 
 # MENU 1: Upload & Training
 if menu == "Upload & Training":
     st.header("📤 Upload Dataset dan Training Model")
     
-    uploaded_file = st.file_uploader("Upload file CSV/Excel", type=['csv', 'xlsx'])
+    # Pilih metode upload
+    upload_method = st.radio(
+        "Pilih Metode Upload:",
+        ["Auto Split 80:20", "Upload Training & Testing Terpisah"]
+    )
     
-    if uploaded_file is not None:
-        # Load data
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
+    if upload_method == "Auto Split 80:20":
+        st.info("📌 Upload 1 file dataset, sistem akan otomatis split 80% training dan 20% testing")
         
-        st.success(f"✅ Data berhasil diupload! Total: {len(df)} baris")
+        uploaded_file = st.file_uploader("Upload file CSV/Excel (Full Dataset)", type=['csv', 'xlsx'], key='full')
         
-        # Tampilkan data
-        st.subheader("📊 Preview Data")
-        st.dataframe(df.head(10))
+        if uploaded_file is not None:
+            # Load data
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+            
+            st.success(f"✅ Data berhasil diupload! Total: {len(df)} baris")
+            
+            # Tampilkan data
+            st.subheader("📊 Preview Data")
+            st.dataframe(df.head(10))
+            
+            # Preprocessing
+            df_processed, le_gender, le_married = preprocess_data(df)
+            
+            # Features dan Target
+            features = ['jenis_kelamin_encoded', 'umur', 'status_menikah_encoded', 
+                        'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning']
+            
+            X = df_processed[features]
+            y = df_processed['ipk']
+            
+            # Split data 80:20
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True)
+            
+            # Info split
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Data", len(df))
+            with col2:
+                st.metric("Training Data", f"{len(X_train)} (80%)")
+            with col3:
+                st.metric("Testing Data", f"{len(X_test)} (20%)")
+            with col4:
+                st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
+            
+            # Simpan ke session state
+            st.session_state.X_train = X_train
+            st.session_state.X_test = X_test
+            st.session_state.y_train = y_train
+            st.session_state.y_test = y_test
+            st.session_state.le_gender = le_gender
+            st.session_state.le_married = le_married
+            st.session_state.features = features
+            st.session_state.df = df
+            
+            st.success("✅ Data berhasil di-split dan siap untuk training!")
+    
+    else:  # Upload Training & Testing Terpisah
+        st.info("📌 Upload 2 file terpisah: 1 untuk training dan 1 untuk testing")
         
-        # Info data
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Data", len(df))
-        with col2:
-            st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
-        with col3:
-            st.metric("Rata-rata Kehadiran", f"{df['kehadiran'].mean():.1f}%")
-        with col4:
-            st.metric("Std Dev IPK", f"{df['ipk'].std():.2f}")
-        
-        # Cek kualitas data
-        st.subheader("🔍 Analisis Kualitas Data")
         col1, col2 = st.columns(2)
+        
         with col1:
-            missing_data = df.isnull().sum().sum()
-            if missing_data > 0:
-                st.warning(f"⚠️ Ditemukan {missing_data} missing values (akan diisi otomatis)")
-            else:
-                st.success("✅ Tidak ada missing values")
+            st.subheader("📁 File Training")
+            train_file = st.file_uploader("Upload Training Dataset (CSV/Excel)", type=['csv', 'xlsx'], key='train')
+            
+            if train_file is not None:
+                if train_file.name.endswith('.csv'):
+                    df_train = pd.read_csv(train_file)
+                else:
+                    df_train = pd.read_excel(train_file)
+                
+                st.success(f"✅ Training data: {len(df_train)} baris")
+                st.dataframe(df_train.head(5))
+        
         with col2:
-            if df['ipk'].std() < 0.1:
-                st.error("❌ Variasi IPK terlalu kecil! Model mungkin tidak akan baik.")
-            else:
-                st.success(f"✅ Variasi IPK cukup baik (std: {df['ipk'].std():.2f})")
+            st.subheader("📁 File Testing")
+            test_file = st.file_uploader("Upload Testing Dataset (CSV/Excel)", type=['csv', 'xlsx'], key='test')
+            
+            if test_file is not None:
+                if test_file.name.endswith('.csv'):
+                    df_test = pd.read_csv(test_file)
+                else:
+                    df_test = pd.read_excel(test_file)
+                
+                st.success(f"✅ Testing data: {len(df_test)} baris")
+                st.dataframe(df_test.head(5))
+        
+        # Jika kedua file sudah diupload
+        if train_file is not None and test_file is not None:
+            # Preprocessing training data
+            df_train_processed, le_gender, le_married = preprocess_data(df_train)
+            
+            # Preprocessing testing data dengan encoder yang sama
+            df_test_processed = df_test.copy()
+            df_test_processed['jenis_kelamin_encoded'] = le_gender.transform(df_test_processed['jenis_kelamin'])
+            df_test_processed['status_menikah_encoded'] = le_married.transform(df_test_processed['status_menikah'])
+            
+            # Handle missing values di test data
+            numeric_cols = ['umur', 'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning', 'ipk']
+            for col in numeric_cols:
+                if col in df_test_processed.columns:
+                    df_test_processed[col] = df_test_processed[col].fillna(df_test_processed[col].median())
+            
+            # Features dan Target
+            features = ['jenis_kelamin_encoded', 'umur', 'status_menikah_encoded', 
+                        'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning']
+            
+            X_train = df_train_processed[features]
+            y_train = df_train_processed['ipk']
+            X_test = df_test_processed[features]
+            y_test = df_test_processed['ipk']
+            
+            # Info split
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Data", len(df_train) + len(df_test))
+            with col2:
+                st.metric("Training Data", len(X_train))
+            with col3:
+                st.metric("Testing Data", len(X_test))
+            with col4:
+                percentage = (len(X_test) / (len(X_train) + len(X_test))) * 100
+                st.metric("Split Ratio", f"{100-percentage:.0f}:{percentage:.0f}")
+            
+            # Simpan ke session state
+            st.session_state.X_train = X_train
+            st.session_state.X_test = X_test
+            st.session_state.y_train = y_train
+            st.session_state.y_test = y_test
+            st.session_state.le_gender = le_gender
+            st.session_state.le_married = le_married
+            st.session_state.features = features
+            st.session_state.df = pd.concat([df_train, df_test], ignore_index=True)
+            
+            st.success("✅ Data training dan testing berhasil diupload dan siap untuk training!")
+    
+    # Training Section (muncul setelah data siap)
+    if st.session_state.X_train is not None:
+        st.markdown("---")
+        st.subheader("🤖 Training Model")
         
         # Pilih model
-        st.subheader("🤖 Pilih Model untuk Training")
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -206,21 +290,26 @@ if menu == "Upload & Training":
                     status_text.text(f"Training {model_name}... ({idx+1}/{len(models_to_train)})")
                     
                     try:
-                        model, X_test, y_test, y_pred, mae, mape, rmse, r2, le_gender, le_married, features, scaler = train_model(df, model_type)
+                        model, y_pred, mae, mape, rmse, r2, scaler = train_model_with_split(
+                            st.session_state.X_train,
+                            st.session_state.X_test,
+                            st.session_state.y_train,
+                            st.session_state.y_test,
+                            model_type
+                        )
                         
                         # Simpan ke session state
                         st.session_state.models[model_type] = {
                             'model': model,
                             'scaler': scaler,
-                            'le_gender': le_gender,
-                            'le_married': le_married,
-                            'features': features
+                            'le_gender': st.session_state.le_gender,
+                            'le_married': st.session_state.le_married,
+                            'features': st.session_state.features
                         }
                         
                         st.session_state.results[model_type] = {
                             'name': model_name,
-                            'X_test': X_test,
-                            'y_test': y_test,
+                            'y_test': st.session_state.y_test,
                             'y_pred': y_pred,
                             'mae': mae,
                             'mape': mape,
@@ -234,7 +323,6 @@ if menu == "Upload & Training":
                         st.error(f"❌ Error saat training {model_name}: {str(e)}")
                 
                 st.session_state.trained = True
-                st.session_state.df = df
                 status_text.text("✅ Training selesai!")
                 
                 # Tampilkan hasil semua model
@@ -264,26 +352,66 @@ if menu == "Upload & Training":
                                 title='Perbandingan MAE',
                                 labels={'x': 'Model', 'y': 'MAE'})
                     st.plotly_chart(fig, use_container_width=True)
+        
+        # Scatter plot semua model
+        st.subheader("📈 Perbandingan Prediksi vs Aktual")
+        
+        fig = go.Figure()
+        
+        colors = ['blue', 'green', 'orange']
+        for idx, (model_type, result) in enumerate(st.session_state.results.items()):
+            fig.add_trace(go.Scatter(
+                x=result['y_test'],
+                y=result['y_pred'],
+                mode='markers',
+                name=result['name'],
+                marker=dict(color=colors[idx % len(colors)], size=8, opacity=0.6)
+            ))
+        
+        # Perfect prediction line
+        y_min = min([r['y_test'].min() for r in st.session_state.results.values()])
+        y_max = max([r['y_test'].max() for r in st.session_state.results.values()])
+        
+        fig.add_trace(go.Scatter(
+            x=[y_min, y_max],
+            y=[y_min, y_max],
+            mode='lines',
+            name='Perfect Prediction',
+            line=dict(color='red', dash='dash', width=2)
+        ))
+        
+        fig.update_layout(
+            title='Perbandingan Semua Model',
+            xaxis_title='IPK Aktual',
+            yaxis_title='IPK Prediksi',
+            hovermode='closest'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Rekomendasi model terbaik
+        best_model_mae = results_df.loc[results_df['MAE'].idxmin()]
+        best_model_r2 = results_df.loc[results_df['R²'].idxmax()]
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.success(f"🏆 **Model dengan MAE Terbaik:** {best_model_mae['Model']}")
+            st.caption(f"MAE = {best_model_mae['MAE']:.4f}, RMSE = {best_model_mae['RMSE']:.4f}")
+        with col2:
+            st.success(f"🏆 **Model dengan R² Terbaik:** {best_model_r2['Model']}")
+            st.caption(f"R² = {best_model_r2['R²']:.4f}, MAPE = {best_model_r2['MAPE (%)']:.2f}%")
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.info("🎓 Aplikasi Prediksi Kelulusan v3.0")
+st.sidebar.caption("Dibuat dengan Streamlit & Multiple ML Models")
+st.sidebar.markdown("**Fitur:**")
+st.sidebar.markdown("✅ Auto Split 80:20")
+st.sidebar.markdown("✅ Upload Training & Testing Terpisah")
+st.sidebar.markdown("✅ 3 Model ML (RF, GB, KNN)")
+st.sidebar.markdown("✅ 4 Metrik Evaluasi (MAE, MAPE, RMSE, R²)")
                 
                 with col2:
-                    rmse_data = [result['rmse'] for result in st.session_state.results.values()]
-                    
-                    fig = px.bar(x=model_names, y=rmse_data,
-                                title='Perbandingan RMSE',
-                                labels={'x': 'Model', 'y': 'RMSE'})
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                col3, col4 = st.columns(2)
-                
-                with col3:
-                    mape_data = [result['mape'] for result in st.session_state.results.values()]
-                    
-                    fig = px.bar(x=model_names, y=mape_data,
-                                title='Perbandingan MAPE (%)',
-                                labels={'x': 'Model', 'y': 'MAPE (%)'})
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col4:
                     r2_data = [result['r2'] for result in st.session_state.results.values()]
                     
                     fig = px.bar(x=model_names, y=r2_data,
@@ -331,20 +459,6 @@ if menu == "Upload & Training":
                                         title=f'Feature Importance - {result["name"]}',
                                         orientation='h')
                             st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("👆 Silakan upload dataset terlebih dahulu")
-        st.markdown("""
-        **Format dataset yang dibutuhkan:**
-        - Nama
-        - jenis_kelamin (Laki-laki/Perempuan)
-        - umur
-        - status_menikah (Menikah/Belum Menikah)
-        - kehadiran (dalam %, contoh: 85)
-        - partisipasi_diskusi (skor)
-        - nilai_tugas (rata-rata)
-        - aktivitas_elearning (skor)
-        - ipk (target prediksi)
-        """)
 
 # MENU 2: Prediksi Individual
 elif menu == "Prediksi Individual":
@@ -391,11 +505,8 @@ elif menu == "Prediksi Individual":
                 'aktivitas_elearning': [aktivitas]
             })
             
-            # Scale jika perlu
-            if selected_model_type in ['knn', 'random_forest', 'gradient_boosting']:
-                input_data_scaled = model_data['scaler'].transform(input_data)
-            else:
-                input_data_scaled = input_data
+            # Scale
+            input_data_scaled = model_data['scaler'].transform(input_data)
             
             # Prediksi
             prediksi = model_data['model'].predict(input_data_scaled)[0]
@@ -414,7 +525,7 @@ elif menu == "Prediksi Individual":
                 status = "Memuaskan"
                 color = "orange"
             else:
-                status = "Perlu Peningkatan"
+                status = "Cukup"
                 color = "red"
             
             col1, col2, col3 = st.columns(3)
@@ -435,8 +546,8 @@ elif menu == "Prediksi Individual":
                 
                 for model_type, model_data in st.session_state.models.items():
                     input_scaled = model_data['scaler'].transform(input_data)
-                    
                     pred = model_data['model'].predict(input_scaled)[0]
+                    
                     all_predictions.append({
                         'Model': st.session_state.results[model_type]['name'],
                         'Prediksi IPK': f"{pred:.2f}"
@@ -467,6 +578,14 @@ elif menu == "Visualisasi":
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
                 fig = px.box(df, y='nilai_tugas', title='Distribusi Nilai Tugas')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Distribusi status akademik
+            if 'status_akademik' in df.columns:
+                st.subheader("Distribusi Status Akademik")
+                status_count = df['status_akademik'].value_counts()
+                fig = px.pie(values=status_count.values, names=status_count.index, 
+                            title='Distribusi Status Akademik')
                 st.plotly_chart(fig, use_container_width=True)
         
         with tab2:
@@ -572,56 +691,3 @@ elif menu == "Perbandingan Model":
                         color='R²',
                         color_continuous_scale='RdYlGn')
             st.plotly_chart(fig, use_container_width=True)
-        
-        # Scatter plot semua model
-        st.subheader("📈 Perbandingan Prediksi vs Aktual")
-        
-        fig = go.Figure()
-        
-        colors = ['blue', 'green', 'orange']
-        for idx, (model_type, result) in enumerate(st.session_state.results.items()):
-            fig.add_trace(go.Scatter(
-                x=result['y_test'],
-                y=result['y_pred'],
-                mode='markers',
-                name=result['name'],
-                marker=dict(color=colors[idx % len(colors)], size=8, opacity=0.6)
-            ))
-        
-        # Perfect prediction line
-        y_min = min([r['y_test'].min() for r in st.session_state.results.values()])
-        y_max = max([r['y_test'].max() for r in st.session_state.results.values()])
-        
-        fig.add_trace(go.Scatter(
-            x=[y_min, y_max],
-            y=[y_min, y_max],
-            mode='lines',
-            name='Perfect Prediction',
-            line=dict(color='red', dash='dash', width=2)
-        ))
-        
-        fig.update_layout(
-            title='Perbandingan Semua Model',
-            xaxis_title='IPK Aktual',
-            yaxis_title='IPK Prediksi',
-            hovermode='closest'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Rekomendasi model terbaik
-        best_model_mae = results_df.loc[results_df['MAE'].idxmin()]
-        best_model_r2 = results_df.loc[results_df['R²'].idxmax()]
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.success(f"🏆 **Model dengan MAE Terbaik:** {best_model_mae['Model']}")
-            st.caption(f"MAE = {best_model_mae['MAE']:.4f}, RMSE = {best_model_mae['RMSE']:.4f}")
-        with col2:
-            st.success(f"🏆 **Model dengan R² Terbaik:** {best_model_r2['Model']}")
-            st.caption(f"R² = {best_model_r2['R²']:.4f}, MAPE = {best_model_r2['MAPE (%)']:.2f}%")
-
-# Footer
-st.sidebar.markdown("---")
-st.sidebar.info("🎓 Aplikasi Prediksi Kelulusan v2.0")
-st.sidebar.caption("Dibuat dengan Streamlit & Multiple ML Models")
