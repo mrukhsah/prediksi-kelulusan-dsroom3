@@ -72,7 +72,7 @@ def train_model(df, model_type='random_forest'):
 
     # Split data 70% training, 30% testing
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    
+
     # Scaling untuk KNN
     scaler = StandardScaler()
     if model_type == 'knn':
@@ -134,26 +134,26 @@ if menu == "Upload & Training":
         st.subheader("📊 Preview Data")
         st.dataframe(df.head(10))
 
-       # Di bagian "Upload & Training", tambahkan informasi split data
-col1, col2, col3, col4, col5 = st.columns(5)  # Ubah dari 4 menjadi 5 kolom
-with col1:
-    st.metric("Total Data", len(df))
-with col2:
-    st.metric("Data Training (70%)", f"{int(len(df) * 0.7)}")
-with col3:
-    st.metric("Data Testing (30%)", f"{int(len(df) * 0.3)}")
-with col4:
-    st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
-with col5:
-    if 'status_akademik' in df.columns:
-        lulus_count = df[df['status_akademik'] == 'Lulus'].shape[0]
-        persentase_lulus = (lulus_count / len(df)) * 100
-        st.metric("Persentase Lulus", f"{persentase_lulus:.1f}%")
-        
+        # Info data
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Total Data", len(df))
+        with col2:
+            st.metric("Data Training (70%)", f"{int(len(df) * 0.7)}")
+        with col3:
+            st.metric("Data Testing (30%)", f"{int(len(df) * 0.3)}")
+        with col4:
+            st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
+        with col5:
+            if 'status_akademik' in df.columns:
+                lulus_count = df[df['status_akademik'] == 'Lulus'].shape[0]
+                persentase_lulus = (lulus_count / len(df)) * 100
+                st.metric("Persentase Lulus", f"{persentase_lulus:.1f}%")
+
         # Pilih model
         st.subheader("🤖 Pilih Model untuk Training")
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             train_rf = st.checkbox("Random Forest Regressor", value=True)
         with col2:
@@ -395,7 +395,7 @@ elif menu == "Prediksi Individual":
                 st.markdown(f"**Status:** :{color}[{status_akademik}]")
             with col4:
                 status_color = "green" if kelulusan == "Lulus" else "red"
-                st.markdown(f"**Prediksi Kelulusan:** :{status_color}[{kelulusin}]")
+                st.markdown(f"**Prediksi Kelulusan:** :{status_color}[{kelulusan}]")
 
             # Progress bar
             st.progress(min(prediksi_ipk / 4.0, 1.0))
