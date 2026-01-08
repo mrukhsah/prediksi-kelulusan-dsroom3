@@ -41,6 +41,19 @@ def preprocess_data(df):
     df_processed['jenis_kelamin_encoded'] = le_gender.fit_transform(df_processed['jenis_kelamin'])
     df_processed['status_menikah_encoded'] = le_married.fit_transform(df_processed['status_menikah'])
     
+    # Handle missing values
+    df_processed = df_processed.fillna(df_processed.mean(numeric_only=True))
+    
+    # Remove outliers menggunakan IQR method
+    numeric_cols = ['umur', 'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning', 'ipk']
+    for col in numeric_cols:
+        Q1 = df_processed[col].quantile(0.25)
+        Q3 = df_processed[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        df_processed = df_processed[(df_processed[col] >= lower_bound) & (df_processed[col] <= upper_bound)]
+    
     return df_processed, le_gender, le_married
 
 # Fungsi untuk training model
@@ -55,25 +68,42 @@ def train_model(df, model_type='random_forest'):
     X = df_processed[features]
     y = df_processed['ipk']
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Split data dengan stratifikasi untuk distribusi yang lebih baik
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True)
     
-    # Scaling untuk KNN
+    # Scaling untuk semua model (penting untuk konsistensi)
     scaler = StandardScaler()
-    if model_type == 'knn':
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-    else:
-        X_train_scaled = X_train
-        X_test_scaled = X_test
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
     
-    # Pilih model
+    # Pilih model dengan hyperparameter yang lebih optimal
     if model_type == 'random_forest':
-        model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
+        model = RandomForestRegressor(
+            n_estimators=200,
+            random_state=42,
+            max_depth=15,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            max_features='sqrt',
+            n_jobs=-1
+        )
     elif model_type == 'gradient_boosting':
-        model = GradientBoostingRegressor(n_estimators=100, random_state=42, max_depth=5, learning_rate=0.1)
+        model = GradientBoostingRegressor(
+            n_estimators=200,
+            random_state=42,
+            max_depth=5,
+            learning_rate=0.05,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            subsample=0.8
+        )
     elif model_type == 'knn':
-        model = KNeighborsRegressor(n_neighbors=5, weights='distance')
+        model = KNeighborsRegressor(
+            n_neighbors=7,
+            weights='distance',
+            metric='minkowski',
+            p=2
+        )
     
     # Training model
     model.fit(X_train_scaled, y_train)
@@ -120,13 +150,30 @@ if menu == "Upload & Training":
         st.dataframe(df.head(10))
         
         # Info data
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Data", len(df))
         with col2:
             st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
         with col3:
             st.metric("Rata-rata Kehadiran", f"{df['kehadiran'].mean():.1f}%")
+        with col4:
+            st.metric("Std Dev IPK", f"{df['ipk'].std():.2f}")
+        
+        # Cek kualitas data
+        st.subheader("🔍 Analisis Kualitas Data")
+        col1, col2 = st.columns(2)
+        with col1:
+            missing_data = df.isnull().sum().sum()
+            if missing_data > 0:
+                st.warning(f"⚠️ Ditemukan {missing_data} missing values (akan diisi otomatis)")
+            else:
+                st.success("✅ Tidak ada missing values")
+        with col2:
+            if df['ipk'].std() < 0.1:
+                st.error("❌ Variasi IPK terlalu kecil! Model mungkin tidak akan baik.")
+            else:
+                st.success(f"✅ Variasi IPK cukup baik (std: {df['ipk'].std():.2f})")
         
         # Pilih model
         st.subheader("🤖 Pilih Model untuk Training")
@@ -344,8 +391,8 @@ elif menu == "Prediksi Individual":
                 'aktivitas_elearning': [aktivitas]
             })
             
-            # Scale jika KNN
-            if selected_model_type == 'knn':
+            # Scale jika perlu
+            if selected_model_type in ['knn', 'random_forest', 'gradient_boosting']:
                 input_data_scaled = model_data['scaler'].transform(input_data)
             else:
                 input_data_scaled = input_data
@@ -387,10 +434,7 @@ elif menu == "Prediksi Individual":
                 all_predictions = []
                 
                 for model_type, model_data in st.session_state.models.items():
-                    if model_type == 'knn':
-                        input_scaled = model_data['scaler'].transform(input_data)
-                    else:
-                        input_scaled = input_data
+                    input_scaled = model_data['scaler'].transform(input_data)
                     
                     pred = model_data['model'].predict(input_scaled)[0]
                     all_predictions.append({
