@@ -71,7 +71,7 @@ def train_model(df, model_type='random_forest'):
     y = df_processed['ipk']
 
     # Split data 80% training, 20% testing
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
     # Scaling untuk KNN
     scaler = StandardScaler()
@@ -134,21 +134,22 @@ if menu == "Upload & Training":
         st.subheader("📊 Preview Data")
         st.dataframe(df.head(10))
 
-        # Info data
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Data", len(df))
-        with col2:
-            st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
-        with col3:
-            st.metric("Rata-rata Kehadiran", f"{df['kehadiran'].mean():.1f}%")
-        with col4:
-            # Hitung persentase kelulusan berdasarkan status_akademik
-            if 'status_akademik' in df.columns:
-                lulus_count = df[df['status_akademik'] == 'Lulus'].shape[0]
-                persentase_lulus = (lulus_count / len(df)) * 100
-                st.metric("Persentase Lulus", f"{persentase_lulus:.1f}%")
-
+       # Di bagian "Upload & Training", tambahkan informasi split data
+col1, col2, col3, col4, col5 = st.columns(5)  # Ubah dari 4 menjadi 5 kolom
+with col1:
+    st.metric("Total Data", len(df))
+with col2:
+    st.metric("Data Training (70%)", f"{int(len(df) * 0.7)}")
+with col3:
+    st.metric("Data Testing (30%)", f"{int(len(df) * 0.3)}")
+with col4:
+    st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
+with col5:
+    if 'status_akademik' in df.columns:
+        lulus_count = df[df['status_akademik'] == 'Lulus'].shape[0]
+        persentase_lulus = (lulus_count / len(df)) * 100
+        st.metric("Persentase Lulus", f"{persentase_lulus:.1f}%")
+        
         # Pilih model
         st.subheader("🤖 Pilih Model untuk Training")
         col1, col2, col3 = st.columns(3)
