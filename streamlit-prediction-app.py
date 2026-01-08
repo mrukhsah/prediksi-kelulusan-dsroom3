@@ -70,9 +70,9 @@ def train_model(df, model_type='random_forest'):
     X = df_processed[features]
     y = df_processed['ipk']
 
-    # Split data 80% training, 20% testing
+    # Split data 70% training, 30% testing
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-
+    
     # Scaling untuk KNN
     scaler = StandardScaler()
     if model_type == 'knn':
@@ -153,7 +153,7 @@ with col5:
         # Pilih model
         st.subheader("🤖 Pilih Model untuk Training")
         col1, col2, col3 = st.columns(3)
-
+        
         with col1:
             train_rf = st.checkbox("Random Forest Regressor", value=True)
         with col2:
