@@ -204,7 +204,7 @@ if menu == "Upload & Training":
         with col4:
             st.metric("Rata-rata IPK", f"{df['ipk'].mean():.2f}")
         
-        # Analisis korelasi sederhana
+        # Analisis korelasi sederhana - PERBAIKAN DI SINI
         st.subheader("🔍 Analisis Korelasi dengan IPK")
         numeric_cols = ['umur', 'kehadiran', 'partisipasi_diskusi', 'nilai_tugas', 'aktivitas_elearning', 'ipk']
         
@@ -217,8 +217,21 @@ if menu == "Upload & Training":
                         color='Korelasi dengan IPK',
                         color_continuous_scale='RdYlGn')
             st.plotly_chart(fig, use_container_width=True)
-
-            st.dataframe(corr_df.style.background_gradient(cmap='RdYlGn', subset=['Korelasi dengan IPK']))
+            
+            # PERBAIKAN: Ganti background_gradient dengan style sederhana
+            st.dataframe(corr_df)
+            
+            # Atau gunakan plotly table sebagai alternatif
+            fig_table = go.Figure(data=[go.Table(
+                header=dict(values=list(corr_df.columns),
+                           fill_color='paleturquoise',
+                           align='left'),
+                cells=dict(values=[corr_df['Fitur'], corr_df['Korelasi dengan IPK']],
+                          fill_color='lavender',
+                          align='left'))
+            ])
+            fig_table.update_layout(title='Tabel Korelasi')
+            st.plotly_chart(fig_table, use_container_width=True)
         
         # Pilih model
         st.subheader("🤖 Pilih Model untuk Training")
@@ -276,7 +289,6 @@ if menu == "Upload & Training":
                         
                     except Exception as e:
                         st.error(f"❌ Error saat training {model_name}: {str(e)}")
-                        st.error("Detail error: " + str(e))
                 
                 st.session_state.trained = True
                 st.session_state.df = df
@@ -515,7 +527,7 @@ elif menu == "Prediksi Individual":
                 })
             
             pred_df = pd.DataFrame(all_predictions)
-            st.dataframe(pred_df.style.background_gradient(cmap='YlOrRd', subset=['Prediksi IPK']), use_container_width=True)
+            st.dataframe(pred_df, use_container_width=True)
 
 # MENU 3: Visualisasi
 elif menu == "Visualisasi":
@@ -645,77 +657,40 @@ elif menu == "Perbandingan Model":
         
         results_df = pd.DataFrame(results_data)
         
-        # Highlight best scores
-        styled_df = results_df.style.highlight_min(subset=['MAE', 'MAPE', 'RMSE'], color='lightgreen')
-        styled_df = styled_df.highlight_max(subset=['R²'], color='lightgreen')
+        # Highlight dengan cara sederhana
+        st.dataframe(results_df, use_container_width=True)
         
-        st.dataframe(styled_df, use_container_width=True)
-        
-        # Visualisasi radar chart untuk perbandingan
-        st.subheader("📈 Radar Chart Perbandingan Model")
-        
-        # Normalisasi metrik untuk radar chart (0-1 scale)
-        models = results_df['Model'].tolist()
-        metrics = ['MAE', 'MAPE', 'RMSE', 'R²']
-        
-        # Untuk MAE, MAPE, RMSE: lower is better (inverse)
-        # Untuk R²: higher is better
-        normalized_data = []
-        
-        for metric in metrics:
-            if metric == 'R²':
-                # Normalisasi R² (higher is better)
-                max_val = results_df[metric].max()
-                min_val = results_df[metric].min()
-                if max_val != min_val:
-                    normalized = (results_df[metric] - min_val) / (max_val - min_val)
-                else:
-                    normalized = [0.5] * len(results_df)
-            else:
-                # Normalisasi MAE, MAPE, RMSE (lower is better, so inverse)
-                max_val = results_df[metric].max()
-                min_val = results_df[metric].min()
-                if max_val != min_val:
-                    normalized = 1 - ((results_df[metric] - min_val) / (max_val - min_val))
-                else:
-                    normalized = [0.5] * len(results_df)
-            
-            normalized_data.append(normalized.tolist())
-        
-        # Buat radar chart
-        fig = go.Figure()
-        
-        for i, model in enumerate(models):
-            fig.add_trace(go.Scatterpolar(
-                r=[normalized_data[j][i] for j in range(len(metrics))],
-                theta=metrics,
-                fill='toself',
-                name=model
-            ))
-        
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 1]
-                )),
-            showlegend=True,
-            title="Perbandingan Model (Normalisasi)"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Rekomendasi model terbaik
-        best_model_r2 = results_df.loc[results_df['R²'].idxmax()]
-        best_model_mae = results_df.loc[results_df['MAE'].idxmin()]
+        # Visualisasi bar chart
+        st.subheader("📈 Visualisasi Perbandingan")
         
         col1, col2 = st.columns(2)
+        
         with col1:
-            st.success(f"🏆 **Model dengan R² Terbaik:** {best_model_r2['Model']}")
-            st.caption(f"R² = {best_model_r2['R²']:.4f}, MAE = {best_model_r2['MAE']:.4f}")
+            fig = px.bar(results_df, x='Model', y='R²',
+                        title='Perbandingan R² Score (Higher is Better)',
+                        color='R²',
+                        color_continuous_scale='RdYlGn')
+            st.plotly_chart(fig, use_container_width=True)
+        
         with col2:
-            st.success(f"🏆 **Model dengan MAE Terbaik:** {best_model_mae['Model']}")
-            st.caption(f"MAE = {best_model_mae['MAE']:.4f}, R² = {best_model_mae['R²']:.4f}")
+            fig = px.bar(results_df, x='Model', y='MAE',
+                        title='Perbandingan MAE (Lower is Better)',
+                        color='MAE',
+                        color_continuous_scale='RdYlGn_r')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Rekomendasi model terbaik
+        if not results_df.empty:
+            best_model_r2 = results_df.loc[results_df['R²'].idxmax()]
+            best_model_mae = results_df.loc[results_df['MAE'].idxmin()]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.success(f"🏆 **Model dengan R² Terbaik:** {best_model_r2['Model']}")
+                st.caption(f"R² = {best_model_r2['R²']:.4f}, MAE = {best_model_r2['MAE']:.4f}")
+            with col2:
+                st.success(f"🏆 **Model dengan MAE Terbaik:** {best_model_mae['Model']}")
+                st.caption(f"MAE = {best_model_mae['MAE']:.4f}, R² = {best_model_mae['R²']:.4f}")
 
 # MENU 5: Analisis Data
 elif menu == "Analisis Data":
