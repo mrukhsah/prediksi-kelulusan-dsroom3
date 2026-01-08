@@ -217,7 +217,7 @@ if menu == "Upload & Training":
                         color='Korelasi dengan IPK',
                         color_continuous_scale='RdYlGn')
             st.plotly_chart(fig, use_container_width=True)
-            
+
             st.dataframe(corr_df.style.background_gradient(cmap='RdYlGn', subset=['Korelasi dengan IPK']))
         
         # Pilih model
