@@ -450,11 +450,7 @@ if menu == "Upload & Training":
             - nilai_tugas: 0-100
             - aktivitas_elearning: 0-100
             - ipk: 0-4
-            
-            **Perbedaan dengan Regresi:**
-            - Regresi: Prediksi angka IPK (contoh: 3.45)
-            - Klasifikasi: Prediksi kategori (contoh: "Lulus" atau "Cumlaude")
-            
+               
             **Keuntungan Klasifikasi:**
             ✅ Lebih robust terhadap data noisy
             ✅ Output lebih actionable (Lulus/Tidak)
@@ -887,39 +883,8 @@ elif menu == "Perbandingan Model":
             - Jika balanced performance → pilih model dengan F1-Score tertinggi
             """)
         
-        # Perbandingan dengan Regresi
-        with st.expander("🔄 Klasifikasi vs Regresi - Mana Lebih Baik?"):
-            st.markdown("""
-            **Keuntungan Klasifikasi untuk Kasus Anda:**
-            
-            ✅ **Lebih Robust terhadap Noise**
-            - Data Anda memiliki anomali (kehadiran tinggi tapi IPK rendah)
-            - Klasifikasi lebih toleran karena hanya prediksi kategori
-            
-            ✅ **Output Lebih Actionable**
-            - "Lulus" atau "Tidak Lulus" → langsung bisa ambil keputusan
-            - IPK 3.45 vs 3.47 → sulit interpretasi praktis
-            
-            ✅ **Metrik Lebih Jelas**
-            - Accuracy, Precision, Recall mudah dipahami
-            - R² negatif di regresi membingungkan
-            
-            ✅ **Handling Imbalanced Data**
-            - Class weights bisa disesuaikan
-            - Fokus pada kelas minoritas (misalnya "Tidak Lulus")
-            
-            **Kapan Pakai Regresi?**
-            - Butuh nilai IPK exact untuk ranking
-            - Data bersih dan konsisten
-            - Hubungan linear jelas antara fitur dan IPK
-            
-            **Kapan Pakai Klasifikasi?**
-            - Data noisy/tidak konsisten ✅ (kasus Anda!)
-            - Output kategorikal sudah cukup
-            - Imbalanced data
-            - Fokus pada decision making
-            """)
-
+    
+        
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.info("🎓 Aplikasi Klasifikasi v1.0")
