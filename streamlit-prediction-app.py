@@ -826,5 +826,3 @@ st.sidebar.caption("""
 **Dataset:** Upload CSV/TSV/Excel
 **Expected Accuracy:** 85-95%
 """)
-
-    """)
