@@ -492,10 +492,6 @@ if menu == "Upload & Training":
             
             **Format file yang didukung:** CSV (recommended), TSV, Excel (.xlsx)
             
-            **Tips:**
-            - Gunakan dataset yang sudah di-generate untuk hasil terbaik!
-            - Expected accuracy dengan dataset: 85-95%
-            - Expected accuracy dengan dataset real (noisy): 50-70%
             """)
 
 # MENU 2: Prediksi Individual
