@@ -492,7 +492,11 @@ if menu == "Upload & Training":
             
             **Format file yang didukung:** CSV (recommended), TSV, Excel (.xlsx)
             
-            )
+            **Tips:**
+            - Gunakan dataset yang sudah di-generate untuk hasil terbaik!
+            - Expected accuracy dengan dataset: 85-95%
+            - Expected accuracy dengan dataset real (noisy): 50-70%
+            """)
 
 # MENU 2: Prediksi Individual
 elif menu == "Prediksi Individual":
@@ -820,19 +824,7 @@ st.sidebar.caption("""
 - Logistic Regression
 
 **Dataset:** Upload CSV/TSV/Excel
+**Expected Accuracy:** 85-95%
 """)
-
-with st.sidebar.expander("💡 Tips"):
-    st.markdown("""
-    **Dataset:**
-    ✅ Quality Score: 92/100
-    ✅ Korelasi Kuat: 0.75-0.85
-    ✅ Akurasi: 85-95%
-    
-    **Dataset Real/Noisy:**
-    ⚠️ Quality Score: 40-60/100
-    ⚠️ Korelasi Lemah: 0.05-0.15
-    ⚠️ Akurasi: 50-65%
-    
 
     """)
