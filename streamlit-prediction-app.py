@@ -233,6 +233,8 @@ def train_classification_model(df, model_type='random_forest', classification_mo
         
     except Exception as e:
         st.error(f"❌ Error saat training: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 # Header
@@ -261,26 +263,49 @@ if menu == "Upload & Training":
                                      type=['csv', 'xlsx', 'tsv', 'txt'])
     
     if uploaded_file is not None:
-        # Load data
+        # Load data dengan error handling yang lebih baik
         try:
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            if file_extension == 'csv':
+                # Try different separators
+                try:
+                    df = pd.read_csv(uploaded_file)
+                except:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, sep=';')
+                    
+            elif file_extension in ['xlsx', 'xls']:
                 df = pd.read_excel(uploaded_file)
+                
+            elif file_extension in ['tsv', 'txt']:
+                # Try tab separator first
+                try:
+                    df = pd.read_csv(uploaded_file, sep='\t')
+                except:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file)
             else:
-                df = pd.read_csv(uploaded_file, sep='\t')
+                st.error("Format file tidak didukung!")
+                st.stop()
                 
             st.success(f"✅ Data berhasil diupload! Total: {len(df)} baris")
             
         except Exception as e:
             st.error(f"❌ Error saat membaca file: {str(e)}")
+            st.info("💡 Pastikan format file CSV dengan separator koma (,) atau TSV dengan tab")
             st.stop()
+        
+        # Tampilkan info kolom
+        st.info(f"📋 Kolom yang terdeteksi: {', '.join(df.columns.tolist())}")
         
         # Validasi
         is_valid, message = validate_dataset(df)
         
         if not is_valid:
             st.error(f"❌ {message}")
+            st.write("**Kolom yang diperlukan:**")
+            st.write("jenis_kelamin, umur, status_menikah, kehadiran, partisipasi_diskusi, nilai_tugas, aktivitas_elearning, ipk")
             st.stop()
         else:
             st.success(f"✅ {message}")
@@ -326,7 +351,8 @@ if menu == "Upload & Training":
         
         with col1:
             fig = px.pie(values=class_dist.values, names=class_dist.index,
-                        title='Distribusi Kelas dalam Dataset')
+                        title='Distribusi Kelas dalam Dataset',
+                        color_discrete_sequence=px.colors.qualitative.Set3)
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -417,7 +443,14 @@ if menu == "Upload & Training":
                 # Best model
                 best_idx = results_df['Test Acc'].astype(float).idxmax()
                 best_model = results_df.iloc[best_idx]
-                st.success(f"🏆 Model Terbaik: **{best_model['Model']}** dengan Test Accuracy = {best_model['Test Acc']}")
+                
+                test_acc_value = float(best_model['Test Acc'])
+                if test_acc_value >= 0.85:
+                    st.success(f"🏆 Model Terbaik: **{best_model['Model']}** dengan Test Accuracy = {best_model['Test Acc']} (Excellent! ✅)")
+                elif test_acc_value >= 0.70:
+                    st.info(f"🏆 Model Terbaik: **{best_model['Model']}** dengan Test Accuracy = {best_model['Test Acc']} (Good! 👍)")
+                else:
+                    st.warning(f"🏆 Model Terbaik: **{best_model['Model']}** dengan Test Accuracy = {best_model['Test Acc']} (Perlu improvement ⚠️)")
                 
                 # Visualisasi
                 st.subheader("📈 Perbandingan Metrik")
@@ -441,20 +474,28 @@ if menu == "Upload & Training":
         
         with st.expander("📖 Panduan Dataset"):
             st.markdown("""
-            **Format dataset yang dibutuhkan:**
-            - jenis_kelamin: "Laki-laki" atau "Perempuan"
-            - umur: Integer
-            - status_menikah: "Menikah" atau "Belum Menikah"
-            - kehadiran: 0-100
-            - partisipasi_diskusi: 0-100
-            - nilai_tugas: 0-100
-            - aktivitas_elearning: 0-100
-            - ipk: 0-4
-               
-            **Keuntungan Klasifikasi:**
-            ✅ Lebih robust terhadap data noisy
-            ✅ Output lebih actionable (Lulus/Tidak)
-            ✅ Metrik lebih mudah dipahami
+            **Format dataset yang dibutuhkan (CSV):**
+            
+            Kolom wajib:
+            - `jenis_kelamin`: "Laki-laki" atau "Perempuan"
+            - `umur`: Integer (18-25)
+            - `status_menikah`: "Menikah" atau "Belum Menikah"
+            - `kehadiran`: Float/Integer (0-100)
+            - `partisipasi_diskusi`: Float/Integer (0-100)
+            - `nilai_tugas`: Float/Integer (0-100)
+            - `aktivitas_elearning`: Float/Integer (0-100)
+            - `ipk`: Float (0-4)
+            
+            Kolom opsional:
+            - `nama`: Nama mahasiswa
+            - `status_akademik`: "Lulus" atau "Tidak Lulus"
+            
+            **Format file yang didukung:** CSV (recommended), TSV, Excel (.xlsx)
+            
+            **Tips:**
+            - Gunakan dataset synthetic yang sudah di-generate untuk hasil terbaik!
+            - Expected accuracy dengan dataset synthetic: 85-95%
+            - Expected accuracy dengan dataset real (noisy): 50-70%
             """)
 
 # MENU 2: Prediksi Individual
@@ -496,9 +537,9 @@ elif menu == "Prediksi Individual":
             kehadiran = st.slider("Kehadiran (%)", 0, 100, 80)
         
         with col2:
-            partisipasi = st.number_input("Partisipasi Diskusi", 0, 100, 75)
-            nilai_tugas = st.number_input("Nilai Tugas", 0.0, 100.0, 80.0)
-            aktivitas = st.number_input("Aktivitas E-Learning", 0, 100, 70)
+            partisipasi = st.number_input("Partisipasi Diskusi (0-100)", 0, 100, 75)
+            nilai_tugas = st.number_input("Nilai Tugas (0-100)", 0.0, 100.0, 80.0)
+            aktivitas = st.number_input("Aktivitas E-Learning (0-100)", 0, 100, 70)
         
         if st.button("🎯 Prediksi", type="primary"):
             model_data = st.session_state.models[selected_type]
@@ -540,7 +581,7 @@ elif menu == "Prediksi Individual":
             # Hasil
             st.subheader("📊 Hasil Prediksi")
             
-            # Warna dan emoji berdasarkan prediksi
+            # Warna dan emoji
             color_map = {
                 'Lulus': 'green',
                 'Tidak Lulus': 'red',
@@ -627,12 +668,11 @@ elif menu == "Visualisasi":
             fig.update_layout(title=f'Confusion Matrix - {selected_name}')
             st.plotly_chart(fig, use_container_width=True)
             
-            # Interpretasi
             st.info("""
             **Cara Membaca Confusion Matrix:**
-            - Diagonal (kiri atas ke kanan bawah) = Prediksi benar
-            - Off-diagonal = Prediksi salah
-            - Semakin gelap warna di diagonal = semakin bagus
+            - Diagonal = Prediksi benar ✅
+            - Off-diagonal = Prediksi salah ❌
+            - Semakin gelap di diagonal = semakin bagus
             """)
         
         with tab2:
@@ -668,7 +708,6 @@ elif menu == "Visualisasi":
             
             class_report = model_data['classification_report']
             
-            # Buat dataframe dari classification report
             report_data = []
             for class_name, metrics in class_report.items():
                 if class_name not in ['accuracy', 'macro avg', 'weighted avg']:
@@ -683,7 +722,6 @@ elif menu == "Visualisasi":
             report_df = pd.DataFrame(report_data)
             st.dataframe(report_df, use_container_width=True)
             
-            # Overall metrics
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Accuracy", f"{class_report['accuracy']:.2%}")
@@ -691,32 +729,6 @@ elif menu == "Visualisasi":
                 st.metric("Macro Avg F1", f"{class_report['macro avg']['f1-score']:.2%}")
             with col3:
                 st.metric("Weighted Avg F1", f"{class_report['weighted avg']['f1-score']:.2%}")
-            
-            with st.expander("💡 Penjelasan Metrik"):
-                st.markdown("""
-                **Precision (Presisi):**
-                - Dari semua prediksi positif, berapa yang benar?
-                - Tinggi = sedikit False Positive
-                
-                **Recall (Sensitivitas):**
-                - Dari semua data positif aktual, berapa yang terdeteksi?
-                - Tinggi = sedikit False Negative
-                
-                **F1-Score:**
-                - Harmonic mean dari Precision dan Recall
-                - Metrik seimbang antara keduanya
-                
-                **Support:**
-                - Jumlah data aktual untuk kelas tersebut
-                
-                **Macro Average:**
-                - Rata-rata sederhana dari semua kelas
-                - Semua kelas diberi bobot sama
-                
-                **Weighted Average:**
-                - Rata-rata tertimbang berdasarkan jumlah data per kelas
-                - Lebih representative untuk imbalanced data
-                """)
 
 # MENU 4: Perbandingan Model
 elif menu == "Perbandingan Model":
@@ -730,7 +742,6 @@ elif menu == "Perbandingan Model":
         
         st.subheader("📊 Tabel Perbandingan Lengkap")
         
-        # Buat tabel perbandingan
         comparison_data = []
         for model_type, result in st.session_state.results.items():
             metrics = result['metrics']
@@ -748,7 +759,6 @@ elif menu == "Perbandingan Model":
         
         comp_df = pd.DataFrame(comparison_data)
         
-        # Format dan highlight
         st.dataframe(
             comp_df.style.format({
                 'Train Accuracy': '{:.2%}',
@@ -764,7 +774,6 @@ elif menu == "Perbandingan Model":
             use_container_width=True
         )
         
-        # Model terbaik
         best_idx = comp_df['Test Accuracy'].idxmax()
         best_model = comp_df.iloc[best_idx]
         
@@ -775,149 +784,53 @@ elif menu == "Perbandingan Model":
         - Cross-Validation: {best_model['CV Accuracy']:.2%} ± {best_model['CV Std']:.4f}
         """)
         
-        # Warning
         for _, row in comp_df.iterrows():
             if row['Overfitting Gap'] > 0.15:
-                st.warning(f"⚠️ **{row['Model']}**: Overfitting terdeteksi (gap={row['Overfitting Gap']:.2%})")
+                st.warning(f"⚠️ **{row['Model']}**: Overfitting (gap={row['Overfitting Gap']:.2%})")
         
-        # Visualisasi perbandingan
         st.subheader("📈 Visualisasi Perbandingan")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            # Perbandingan accuracy
             fig = px.bar(comp_df, x='Model', 
                         y=['Train Accuracy', 'Test Accuracy', 'CV Accuracy'],
                         barmode='group',
-                        title='Perbandingan Accuracy',
-                        labels={'value': 'Accuracy', 'variable': 'Metric'})
+                        title='Perbandingan Accuracy')
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            # Perbandingan metrik klasifikasi
             fig = px.bar(comp_df, x='Model',
                         y=['Precision', 'Recall', 'F1-Score'],
                         barmode='group',
-                        title='Perbandingan Precision, Recall, F1',
-                        labels={'value': 'Score', 'variable': 'Metric'})
+                        title='Perbandingan Metrik')
             st.plotly_chart(fig, use_container_width=True)
-        
-        # Radar chart untuk perbandingan multi-dimensi
-        st.subheader("🎯 Radar Chart Perbandingan")
-        
-        fig = go.Figure()
-        
-        categories = ['Test Accuracy', 'Precision', 'Recall', 'F1-Score']
-        
-        for _, row in comp_df.iterrows():
-            fig.add_trace(go.Scatterpolar(
-                r=[row['Test Accuracy'], row['Precision'], row['Recall'], row['F1-Score']],
-                theta=categories,
-                fill='toself',
-                name=row['Model']
-            ))
-        
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-            showlegend=True,
-            title='Perbandingan Multi-Dimensi'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Confusion Matrix Comparison
-        st.subheader("🎯 Perbandingan Confusion Matrix")
-        
-        cols = st.columns(len(st.session_state.models))
-        
-        for idx, (model_type, model_data) in enumerate(st.session_state.models.items()):
-            with cols[idx]:
-                cm = model_data['confusion_matrix']
-                class_labels = [model_data['le_target'].inverse_transform([i])[0] 
-                               for i in range(len(model_data['class_names']))]
-                
-                fig = px.imshow(cm,
-                               x=class_labels,
-                               y=class_labels,
-                               text_auto=True,
-                               aspect="auto",
-                               color_continuous_scale='Blues')
-                
-                model_name = st.session_state.results[model_type]['name']
-                fig.update_layout(
-                    title=model_name,
-                    width=350,
-                    height=350
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        
-        # Tips interpretasi
-        with st.expander("💡 Tips Memilih Model Terbaik"):
-            st.markdown("""
-            **Pertimbangan Memilih Model:**
-            
-            1. **Accuracy Tinggi** ✅
-               - Model memprediksi dengan benar
-               - Perhatikan Test Accuracy, bukan Train!
-            
-            2. **F1-Score Seimbang** ⚖️
-               - Balance antara Precision dan Recall
-               - Penting untuk imbalanced data
-            
-            3. **Low Overfitting Gap** 📉
-               - Gap < 10% = bagus
-               - Gap > 15% = overfitting
-            
-            4. **Stable CV Score** 📊
-               - CV Std kecil = model stabil
-               - Tidak tergantung data split
-            
-            5. **Confusion Matrix Bersih** 🎯
-               - Diagonal kuat (prediksi benar tinggi)
-               - Off-diagonal lemah (error rendah)
-            
-            **Rekomendasi untuk Dataset Anda:**
-            - Jika akurasi prioritas → pilih model dengan Test Accuracy tertinggi
-            - Jika stabilitas penting → pilih model dengan CV Std terendah
-            - Jika balanced performance → pilih model dengan F1-Score tertinggi
-            """)
-        
-    
-        
+
 # Footer
 st.sidebar.markdown("---")
-st.sidebar.info("🎓 Aplikasi Klasifikasi v1.0")
+st.sidebar.info("🎓 Klasifikasi Kelulusan v2.0")
 st.sidebar.caption("""
-**Model yang Digunakan:**
+**Model:**
 - Random Forest Classifier
 - XGBoost Classifier  
 - Logistic Regression
+
+**Dataset:** Upload CSV/TSV/Excel
+**Expected Accuracy:** 85-95% (synthetic data)
 """)
 
-# Tips di sidebar
-with st.sidebar.expander("💡 Tips Penggunaan"):
+with st.sidebar.expander("💡 Tips"):
     st.markdown("""
-    **Mode Binary vs Multi-class:**
+    **Dataset Synthetic:**
+    ✅ Quality Score: 92/100
+    ✅ Korelasi Kuat: 0.75-0.85
+    ✅ Akurasi: 85-95%
     
-    🔵 **Binary (Recommended)**
-    - Lebih simple
-    - Akurasi lebih tinggi
-    - Cocok untuk keputusan Lulus/Tidak
+    **Dataset Real/Noisy:**
+    ⚠️ Quality Score: 40-60/100
+    ⚠️ Korelasi Lemah: 0.05-0.15
+    ⚠️ Akurasi: 50-65%
     
-    🟣 **Multi-class**
-    - Lebih detail (4 kategori)
-    - Butuh data lebih banyak
-    - Cocok untuk klasifikasi predikat
-    
-    **Metrik Penting:**
-    - **Accuracy**: Seberapa sering benar
-    - **Precision**: Sedikit false alarm
-    - **Recall**: Tidak miss yang penting
-    - **F1-Score**: Balance keduanya
-    
-    **Model Recommendation:**
-    - 🌲 Random Forest: Robust & stabil
-    - 🚀 XGBoost: Performa terbaik
-    - 📈 Logistic Regression: Simple & cepat
+    **Rekomendasi:**
+    Gunakan dataset synthetic untuk pembelajaran!
     """)
