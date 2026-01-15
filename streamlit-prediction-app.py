@@ -759,8 +759,9 @@ elif menu == "Perbandingan Model":
         
         comp_df = pd.DataFrame(comparison_data)
         
-        st.dataframe(
-            comp_df.style.format({
+        # Format tabel dengan styling
+        try:
+            styled_df = comp_df.style.format({
                 'Train Accuracy': '{:.2%}',
                 'Test Accuracy': '{:.2%}',
                 'CV Accuracy': '{:.2%}',
@@ -769,10 +770,17 @@ elif menu == "Perbandingan Model":
                 'Recall': '{:.2%}',
                 'F1-Score': '{:.2%}',
                 'Overfitting Gap': '{:.4f}'
-            }).background_gradient(subset=['Test Accuracy'], cmap='RdYlGn')
-              .background_gradient(subset=['F1-Score'], cmap='RdYlGn'),
-            use_container_width=True
-        )
+            })
+            
+            # Highlight best scores
+            styled_df = styled_df.highlight_max(subset=['Test Accuracy', 'F1-Score'], color='lightgreen')
+            styled_df = styled_df.highlight_min(subset=['Overfitting Gap'], color='lightgreen')
+            
+            st.dataframe(styled_df, use_container_width=True)
+        except Exception as e:
+            # Fallback: tampilkan tanpa styling jika error
+            st.dataframe(comp_df, use_container_width=True)
+            st.caption("⚠️ Styling tabel tidak tersedia, menampilkan versi plain")
         
         best_idx = comp_df['Test Accuracy'].idxmax()
         best_model = comp_df.iloc[best_idx]
